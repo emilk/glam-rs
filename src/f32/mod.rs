@@ -42,23 +42,6 @@ pub use vec4_swizzle::*;
 
 #[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
 #[repr(C)]
-pub struct XYZW {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub w: f32,
-}
-
-#[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
-#[repr(C)]
-pub struct XYZ {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-#[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
-#[repr(C)]
 pub struct XYAxes {
     pub x_axis: Vec2,
     pub y_axis: Vec2,

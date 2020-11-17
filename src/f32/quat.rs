@@ -717,7 +717,7 @@ impl From<__m128> for Quat {
 }
 
 impl Deref for Quat {
-    type Target = super::XYZW;
+    type Target = crate::XYZW<f32>;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         unsafe { &*(self as *const Self as *const Self::Target) }

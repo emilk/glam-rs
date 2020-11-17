@@ -1064,7 +1064,7 @@ impl From<Vec3A> for Vec2 {
 }
 
 impl Deref for Vec3A {
-    type Target = super::XYZ;
+    type Target = crate::XYZ<f32>;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         unsafe { &*(self as *const Self as *const Self::Target) }

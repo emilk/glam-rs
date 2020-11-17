@@ -1210,7 +1210,7 @@ impl From<Vec4> for Vec2 {
 
 #[cfg(vec4_sse2)]
 impl Deref for Vec4 {
-    type Target = super::XYZW;
+    type Target = crate::XYZW<f32>;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         unsafe { &*(self as *const Self as *const Self::Target) }
