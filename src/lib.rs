@@ -170,10 +170,14 @@ The minimum supported version of Rust for `glam` is `1.36.0`.
 #[macro_use]
 mod macros;
 
-mod inner;
+mod vector_traits;
+mod scalar_traits;
+mod storage;
 
 #[doc(hidden)]
 pub mod f32;
+
+pub use self::storage::{XY, XYZ, XYZW};
 
 pub use self::f32::{
     mat2, mat3, mat4, quat, vec2, vec3, vec3a, vec4, Mat2, Mat3, Mat4, Quat, Vec2, Vec2Mask, Vec3,
@@ -186,23 +190,6 @@ pub use swizzles::{Vec2Swizzles, Vec3ASwizzles, Vec3Swizzles, Vec4Swizzles};
 
 #[cfg(feature = "transform-types")]
 pub use self::f32::{TransformRT, TransformSRT};
-
-#[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
-#[repr(C)]
-pub struct XYZW<T> {
-    pub x: T,
-    pub y: T,
-    pub z: T,
-    pub w: T,
-}
-
-#[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
-#[repr(C)]
-pub struct XYZ<T> {
-    pub x: T,
-    pub y: T,
-    pub z: T,
-}
 
 #[repr(align(16))]
 pub(crate) struct Align16<T>(T);

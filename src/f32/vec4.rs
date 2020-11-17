@@ -1,6 +1,8 @@
 #[cfg(feature = "num-traits")]
 use num_traits::Float;
 
+use crate::vector_traits::*;
+
 use super::{Vec2, Vec3, Vec3A, Vec4Mask};
 use core::{fmt, ops::*};
 
@@ -15,7 +17,9 @@ use std::iter::{Product, Sum};
 #[cfg(vec4_sse2)]
 use crate::Align16;
 #[cfg(vec4_sse2)]
-use core::{cmp::Ordering, f32, mem::MaybeUninit};
+use core::mem::MaybeUninit;
+
+use core::{cmp::Ordering, f32};
 
 const ZERO: Vec4 = const_vec4!([0.0; 4]);
 const ONE: Vec4 = const_vec4!([1.0; 4]);
@@ -24,21 +28,24 @@ const Y_AXIS: Vec4 = const_vec4!([0.0, 1.0, 0.0, 0.0]);
 const Z_AXIS: Vec4 = const_vec4!([0.0, 0.0, 1.0, 0.0]);
 const W_AXIS: Vec4 = const_vec4!([0.0, 0.0, 0.0, 1.0]);
 
-/// A 4-dimensional vector.
-///
-/// This type is 16 byte aligned.
-#[cfg(all(vec4_sse2, not(doc)))]
+#[cfg(all(target_feature = "sse2", not(feature = "scalar-math")))]
+type Inner = __m128;
+
+#[cfg(any(not(target_feature = "sse2"), feature = "scalar-math"))]
+type Inner = crate::XYZW<f32>;
+
+#[cfg(not(doc))]
 #[derive(Clone, Copy)]
+// if compiling with simd enabled assume alignment needs to match the simd type
+// #[cfg_attr(any(vec4_sse2, vec4_f32_align16), repr(align(16)))]
 #[repr(C)]
-pub struct Vec4(pub(crate) __m128);
+pub struct Vec4(pub(crate) Inner);
 
 /// A 4-dimensional vector.
 ///
 /// This type is 16 byte aligned unless the `scalar-math` feature is enabed.
-#[cfg(any(vec4_f32, doc))]
+#[cfg(doc)]
 #[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
-// if compiling with simd enabled assume alignment needs to match the simd type
-#[cfg_attr(any(vec4_sse2, vec4_f32_align16), repr(align(16)))]
 #[repr(C)]
 pub struct Vec4 {
     pub x: f32,
@@ -47,15 +54,13 @@ pub struct Vec4 {
     pub w: f32,
 }
 
-#[cfg(all(vec4_sse2, not(doc)))]
 impl Default for Vec4 {
     #[inline]
     fn default() -> Self {
-        ZERO
+        Self(Inner::ZERO)
     }
 }
 
-#[cfg(all(vec4_sse2, not(doc)))]
 impl PartialEq for Vec4 {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -63,7 +68,6 @@ impl PartialEq for Vec4 {
     }
 }
 
-#[cfg(all(vec4_sse2, not(doc)))]
 impl PartialOrd for Vec4 {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -98,14 +102,7 @@ impl Vec4 {
     /// Creates a new `Vec4`.
     #[inline]
     pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
-        #[cfg(vec4_sse2)]
-        unsafe {
-            Self(_mm_set_ps(w, z, y, x))
-        }
-        #[cfg(vec4_f32)]
-        {
-            Self { x, y, z, w }
-        }
+        Self(Inner::new(x, y, z, w))
     }
 
     /// Creates a `Vec4` with all elements set to `0.0`.
@@ -147,20 +144,7 @@ impl Vec4 {
     /// Creates a `Vec4` with all elements set to `v`.
     #[inline]
     pub fn splat(v: f32) -> Self {
-        #[cfg(vec4_sse2)]
-        unsafe {
-            Self(_mm_set_ps1(v))
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            Self {
-                x: v,
-                y: v,
-                z: v,
-                w: v,
-            }
-        }
+        Self(Inner::splat(v))
     }
 
     /// Creates a `Vec3` from the `x`, `y` and `z` elements of `self`, discarding `w`.
@@ -170,7 +154,8 @@ impl Vec4 {
     /// To truncate to `Vec3A` use `Vec3A::from()`.
     #[inline]
     pub fn truncate(self) -> Vec3 {
-        self.into()
+        // TODO: Inner truncate
+        Vec3::new(self.x, self.y, self.z)
     }
 
     /// Calculates the Vec4 dot product and returns answer in x lane of __m128.
@@ -197,32 +182,13 @@ impl Vec4 {
     /// Computes the 4D dot product of `self` and `other`.
     #[inline]
     pub fn dot(self, other: Self) -> f32 {
-        #[cfg(vec4_sse2)]
-        unsafe {
-            _mm_cvtss_f32(self.dot_as_m128(other))
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            (self.x * other.x) + (self.y * other.y) + (self.z * other.z) + (self.w * other.w)
-        }
+        self.0.dot(other.0)
     }
 
     /// Computes the 4D length of `self`.
     #[inline]
     pub fn length(self) -> f32 {
-        #[cfg(vec4_sse2)]
-        {
-            unsafe {
-                let dot = self.dot_as_m128(self);
-                _mm_cvtss_f32(_mm_sqrt_ps(dot))
-            }
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            self.dot(self).sqrt()
-        }
+        self.0.length()
     }
 
     /// Computes the squared 4D length of `self`.
@@ -231,7 +197,7 @@ impl Vec4 {
     /// root operation.
     #[inline]
     pub fn length_squared(self) -> f32 {
-        self.dot(self)
+        self.0.dot(self.0)
     }
 
     /// Computes `1.0 / Vec4::length()`.
@@ -239,19 +205,7 @@ impl Vec4 {
     /// For valid results, `self` must _not_ be of length zero.
     #[inline]
     pub fn length_recip(self) -> f32 {
-        #[cfg(vec4_sse2)]
-        {
-            unsafe {
-                let dot = self.dot_as_m128(self);
-                // _mm_rsqrt_ps is lower precision
-                _mm_cvtss_f32(_mm_div_ps(ONE.0, _mm_sqrt_ps(dot)))
-            }
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            self.length().recip()
-        }
+        self.0.length_recip()
     }
 
     /// Computes the Euclidean distance between two points in space.
@@ -271,16 +225,7 @@ impl Vec4 {
     /// For valid results, `self` must _not_ be of length zero.
     #[inline]
     pub fn normalize(self) -> Self {
-        #[cfg(vec4_sse2)]
-        {
-            let dot = self.dot_as_vec4(self);
-            unsafe { Self(_mm_div_ps(self.0, _mm_sqrt_ps(dot.0))) }
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            self * self.length_recip()
-        }
+        Self(self.0.normalize())
     }
 
     /// Returns the vertical minimum of `self` and `other`.
@@ -290,20 +235,7 @@ impl Vec4 {
     /// taking the minimum of each element individually.
     #[inline]
     pub fn min(self, other: Self) -> Self {
-        #[cfg(vec4_sse2)]
-        unsafe {
-            Self(_mm_min_ps(self.0, other.0))
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            Self {
-                x: self.x.min(other.x),
-                y: self.y.min(other.y),
-                z: self.z.min(other.z),
-                w: self.w.min(other.w),
-            }
-        }
+        Self(self.0.min(other.0))
     }
 
     /// Returns the vertical maximum of `self` and `other`.
@@ -313,20 +245,7 @@ impl Vec4 {
     /// taking the maximum of each element individually.
     #[inline]
     pub fn max(self, other: Self) -> Self {
-        #[cfg(vec4_sse2)]
-        unsafe {
-            Self(_mm_max_ps(self.0, other.0))
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            Self {
-                x: self.x.max(other.x),
-                y: self.y.max(other.y),
-                z: self.z.max(other.z),
-                w: self.w.max(other.w),
-            }
-        }
+        Self(self.0.max(other.0))
     }
 
     /// Returns the horizontal minimum of `self`'s elements.
@@ -506,21 +425,7 @@ impl Vec4 {
     /// Panics if `slice` is less than four elements long.
     #[inline]
     pub fn from_slice_unaligned(slice: &[f32]) -> Self {
-        #[cfg(vec4_sse2)]
-        {
-            assert!(slice.len() >= 4);
-            unsafe { Self(_mm_loadu_ps(slice.as_ptr())) }
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            Self {
-                x: slice[0],
-                y: slice[1],
-                z: slice[2],
-                w: slice[3],
-            }
-        }
+        Self(Inner::from_slice_unaligned(slice))
     }
 
     /// Writes the elements of `self` to the first four elements in `slice`.
@@ -530,19 +435,7 @@ impl Vec4 {
     /// Panics if `slice` is less than four elements long.
     #[inline]
     pub fn write_to_slice_unaligned(self, slice: &mut [f32]) {
-        #[cfg(vec4_sse2)]
-        unsafe {
-            assert!(slice.len() >= 4);
-            _mm_storeu_ps(slice.as_mut_ptr(), self.0);
-        }
-
-        #[cfg(vec4_f32)]
-        {
-            slice[0] = self.x;
-            slice[1] = self.y;
-            slice[2] = self.z;
-            slice[3] = self.w;
-        }
+        self.0.write_to_slice_unaligned(slice)
     }
 
     /// Per element multiplication/addition of the three inputs: b + (self * a)
@@ -1208,20 +1101,18 @@ impl From<Vec4> for Vec2 {
     }
 }
 
-#[cfg(vec4_sse2)]
 impl Deref for Vec4 {
     type Target = crate::XYZW<f32>;
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(self as *const Self as *const Self::Target) }
+        self.0.deref()
     }
 }
 
-#[cfg(vec4_sse2)]
 impl DerefMut for Vec4 {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *(self as *mut Self as *mut Self::Target) }
+        self.0.deref_mut()
     }
 }
 
